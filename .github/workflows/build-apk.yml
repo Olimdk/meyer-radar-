@@ -1,1 +1,72 @@
+name: Build Meyer Radar APK
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    name: Build debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Prepare project source
+        shell: bash
+        run: |
+          set -e
+          if [ -f "meyer-radar-android.zip" ]; then
+            unzip -o meyer-radar-android.zip
+            PROJECT_DIR="meyer-radar-android"
+          elif [ -d "meyer-radar-android" ]; then
+            PROJECT_DIR="meyer-radar-android"
+          elif [ -f "settings.gradle.kts" ]; then
+            PROJECT_DIR="."
+          else
+            echo "Could not find project source."
+            echo "Upload meyer-radar-android.zip at the repository root."
+            exit 1
+          fi
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Install JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+
+      - name: Install Android SDK components
+        shell: bash
+        run: |
+          set -e
+          yes | sdkmanager --licenses > /dev/null || true
+          echo y | sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Build debug APK
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          gradle wrapper --gradle-version 8.9 --distribution-type bin
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: meyer-radar-debug-apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+          

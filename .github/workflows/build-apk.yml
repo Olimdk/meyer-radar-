@@ -42,26 +42,48 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
           cache-read-only: false
 
-      - name: Install Android SDK components
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -e
-          yes | sdkmanager --licenses > /dev/null || true
-          echo y | sdkmanager "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          SDKMANAGER=""
+          if [ -n "$ANDROID_HOME" ] && [ -d "$ANDROID_HOME/cmdline-tools" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1 || true)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER=$(command -v sdkmanager || true)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager was not found after Android SDK setup"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          echo y | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Verify build tools
+        shell: bash
+        run: |
+          set -e
+          command -v java
+          command -v gradle
+          gradle --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
 
       - name: Build debug APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-          gradle wrapper --gradle-version 8.9 --distribution-type bin
-          ./gradlew :app:assembleDebug --stacktrace
+          gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

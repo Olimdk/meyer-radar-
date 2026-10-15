@@ -42,47 +42,52 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
-          cache-read-only: false
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
+      - name: Install Gradle 8.9
         shell: bash
         run: |
           set -e
-          SDKMANAGER=""
-          if [ -n "$ANDROID_HOME" ] && [ -d "$ANDROID_HOME/cmdline-tools" ]; then
-            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1 || true)
-          fi
-          if [ -z "$SDKMANAGER" ]; then
-            SDKMANAGER=$(command -v sdkmanager || true)
-          fi
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager was not found after Android SDK setup"
-            exit 1
-          fi
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-          echo y | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          curl --fail --silent --show-error --location             --output /tmp/gradle-8.9-bin.zip             https://services.gradle.org/distributions/gradle-8.9-bin.zip
+          unzip -q /tmp/gradle-8.9-bin.zip -d /tmp
+          echo "/tmp/gradle-8.9/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android SDK command-line tools
+        shell: bash
+        run: |
+          set -e
+          SDK_ROOT="$RUNNER_TEMP/android-sdk"
+          mkdir -p "$SDK_ROOT/cmdline-tools" /tmp/android-tools
+          curl --fail --silent --show-error --location             --output /tmp/android-tools/commandlinetools.zip             https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/android-tools/commandlinetools.zip -d /tmp/android-tools
+          rm -rf "$SDK_ROOT/cmdline-tools/latest"
+          mv /tmp/android-tools/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Accept licenses and install SDK packages
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses > /dev/null
+          echo y | "$SDKMANAGER" --sdk_root="$ANDROID_HOME"             "platform-tools"             "platforms;android-35"             "build-tools;35.0.0" > /dev/null
 
       - name: Verify build tools
         shell: bash
         run: |
           set -e
-          command -v java
-          command -v gradle
+          java -version
           gradle --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME/platforms/android-35"
+          test -d "$ANDROID_HOME/build-tools/35.0.0"
 
       - name: Build debug APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
+          printf 'sdk.dir=%s
+' "$ANDROID_HOME" > local.properties
           gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK artifact
